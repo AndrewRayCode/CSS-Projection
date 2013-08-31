@@ -4,24 +4,68 @@ var $canvas = $('#canvas'),
     height = $canvas.height(),
     width = $canvas.width();
 
-var obj = [
-    // front face
-    Vector.create([ -1.0 , -1.0 , 1.0 ])  ,
-    Vector.create([ -1.0 , 1.0  , 1.0 ])  ,
-    Vector.create([ -1.0 , -1.0 , -1.0 ]) ,
-    Vector.create([ -1.0 , 1.0  , -1.0 ]) ,
+var camera = { x: 0, y: 0, z: 0 };
+var fogDist = 0.5;
 
-    Vector.create([ 1.0  , -1.0 , 1.0 ])  ,
-    Vector.create([ 1.0  , 1.0  , 1.0 ])  ,
-    Vector.create([ 1.0  , -1.0 , -1.0 ]) ,
-    Vector.create([ 1.0  , 1.0  , -1.0 ])
-];
-obj.angle = {
-    x: 0, y: 0, z: 0
+var dot = function( color ) {
+    return $('<div class="point"></div>').appendTo( $canvas ).css( 'background', color );
 };
 
-var dot = function( vec ) {
-    return $('<div class="point"></div>').appendTo( $canvas );
+var cube = function( side, tesselation ) {
+    var obj = [],
+        width = side / 2,
+        step = side / tesselation,
+        x, y, z;
+    
+    // Build top of cube first
+    for( x = -width; x <= width; x += step ) {
+        for( y = -width; y <= width; y += step ) {
+            obj.push(
+                Vector.create([ x, y, width ])
+            );
+        }
+    }
+
+    // draw the "ribs"
+    for( z = width - step; z >= ( -width + step ); z -= step ) {
+
+        // draw two lines at + and - side
+        for( x = -width; x <= width; x += side ) {
+            for( y = -width; y <= width; y += step ) {
+                obj.push(
+                    Vector.create([ x, y, z ])
+                );
+                obj[obj.length - 1].$dot = dot( 'green' );
+            }
+        }
+
+        // Fill in the sides
+        for( x = -width + step; x <= width - step; x += step ) {
+            obj.push(
+                Vector.create([ x, -width, z ]),
+                Vector.create([ x, width, z ])
+            );
+            obj[obj.length - 1].$dot = dot( 'blue' );
+            obj[obj.length - 2].$dot = dot( 'blue' );
+        }
+    }
+
+    // draw bottom of cube
+    for( x = -width; x <= width; x += step ) {
+        for( y = -width; y <= width; y += step ) {
+            obj.push(
+                Vector.create([ x, y, -width ])
+            );
+        }
+    }
+
+    return obj;
+};
+
+var obj = cube( 1, 8 );
+
+obj.angle = {
+    x: 0, y: 0, z: 0
 };
 
 var modelMatrix = Matrix.create([
@@ -31,6 +75,7 @@ var modelMatrix = Matrix.create([
     [0, 0, 0, 1]
 ]).x(0.2);
 modelMatrix.elements[3][3] = 1;
+
 var viewMatrix = Matrix.create([
     [1, 0, 0, 0],
     [0, 1, 0, 0],
@@ -59,7 +104,7 @@ var rotationMatrix = function( around, angle ) {
         ]);
     } else if( around === 'z' ) {
         return Matrix.create([
-            [cos, sin, 0, 0],
+            [cos, -sin, 0, 0],
             [sin, cos, 0, 0],
             [0, 0, 1, 0],
             [0, 0, 0, 1]
@@ -82,9 +127,18 @@ var projectionMatrix = Matrix.create([
 
     [0, ( 2 * near ) / ( top - bottom ), ( top + bottom ) / ( top - bottom ), 0],
 
-    [0, 0, -( ( far + near ) / ( far - near ) ), -( ( 2 * far * near ) / ( far - near ))],
+    [0, 0, ( -( far + near ) / ( far - near ) ), ( -( 2 * far * near ) / ( far - near ))],
 
     [0, 0, -1, 0]
+]);
+var orthoMatrix= Matrix.create([
+    [ 2 * ( right - left ), 0, 0, -( ( right + left ) / ( right - left ) )],
+
+    [0, 2 / ( top - bottom ), 0, -( (top + bottom ) / (top - bottom) )],
+
+    [0, 0, -( 2 / ( far - near ) ), -( ( far + near ) / ( far - near ))],
+
+    [0, 0, 0, 1]
 ]);
 
 var updateVert = function( vert ) {
@@ -106,22 +160,40 @@ var updateVert = function( vert ) {
         .multiply( homogen
         );
 
-    obj.angle.y += 0.1;
-    obj.angle.x -= 0.1;
-    obj.angle.z += 0.1;
+    obj.angle.y += 0.001;
+    obj.angle.x -= 0.001;
+    obj.angle.z += 0.01;
 
-    // TODO: calculate pos here?
     var x = ( ( trans.elements[0] + 1 ) / 2.0 ) * width,
         y = ( ( trans.elements[1] + 1 ) / 2.0 ) * height;
 
     vert.$dot.css({
         top: x + 'px',
         left: y + 'px',
+        opacity: fogDist - scaleBetween( camera.z - trans.elements[2], 0, fogDist )
     });
 };
 
+var scaleBetween = function( val, min, max, scaleStart, scaleEnd ) {
+    if( scaleStart === undefined ) {
+        scaleStart = 0;
+    }
+    if( scaleEnd === undefined ) {
+        scaleEnd = 1;
+    }
+
+    return Math.max(
+        scaleStart,
+            Math.min( scaleEnd,
+                ( ( scaleEnd - scaleStart ) * ( val - min ) )  / ( max - min )
+            )
+    );
+};
+
 $.each( obj, function( i, vert ) {
-    vert.$dot = dot();
+    if( !vert.$dot ) {
+        vert.$dot = dot();
+    }
 });
 
 var drawLoop = function() {
